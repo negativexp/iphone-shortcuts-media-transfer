@@ -1,8 +1,14 @@
 ﻿using System;
+using System.Collections.Generic;
+using System.Globalization;
 using System.IO;
+using System.Linq;
 using System.Net;
 using System.Net.Sockets;
+using System.Runtime.InteropServices.ComTypes;
 using System.Text;
+using MetadataExtractor;
+using MetadataExtractor.Formats.Exif;
 
 namespace ShortcutsListener
 {
@@ -14,10 +20,24 @@ namespace ShortcutsListener
             int port = 2560;
             byte[] responseBytes = Encoding.ASCII.GetBytes(HTTPRequest.BasicResponse);
             TcpListener server = new TcpListener(IPAddress.Any, port);
-            byte[] msg = new byte[10000];
-            int readCounter = 0;
-            int numberOfBytesRead = 0;
+            int filecounter = 1;
+            string dirPath = "";
 
+            Console.WriteLine("Please type in a folder name that exists or one will be created");
+            string folderInput = Console.ReadLine();
+            if(System.IO.Directory.Exists(folderInput))
+            {
+                Console.WriteLine($"Folder {folderInput} has been found!");
+                dirPath = folderInput + "\\";
+            }
+            else
+            {
+                dirPath = folderInput + "\\";
+                System.IO.Directory.CreateDirectory(folderInput);
+                Console.WriteLine($"Folder {folderInput} has been created!");
+            }
+
+            Console.WriteLine("starting local server...");
             server.Start();
 
             while (true)
@@ -31,8 +51,7 @@ namespace ShortcutsListener
                 //get the file size 
                 if (HTTPRequest.Headers.ContainsKey(HTTPReqHeaderKey.ContentLength) && int.TryParse(HTTPRequest.Headers[HTTPReqHeaderKey.ContentLength], out int numberOfbytesToRead))
                 {
-
-                    string fileName = null;
+                    string fileName = "";
                     if (HTTPRequest.Headers.ContainsKey(HTTPReqHeaderKey.FileName))
                     {
                         fileName = HTTPRequest.Headers[HTTPReqHeaderKey.FileName];
@@ -44,7 +63,6 @@ namespace ShortcutsListener
 
                     //get the extention of the file its been always image/*, video/*, */*
                     string fileExtention = HTTPRequest.Headers[HTTPReqHeaderKey.ContentType].Split('/')[1].ToLower();
-
 
                     switch (fileExtention)
                     {
@@ -58,25 +76,71 @@ namespace ShortcutsListener
                             break;
                     }
 
-                    fileName = fileName + "." + fileExtention;
+                    byte[] buffer = new byte[10000];
+                    int readCounter = 0;
+                    int numberOfBytesRead = 0;
 
-                    Console.WriteLine(fileName);
-                    FileStream fs = new FileStream(fileName, FileMode.Create);
+                    byte[] bytes = new byte[numberOfbytesToRead];
                     readCounter = 0;
                     while (readCounter < numberOfbytesToRead)
                     {
-                        numberOfBytesRead = ns.Read(msg, 0, msg.Length);
+                        numberOfBytesRead = ns.Read(buffer, 0, buffer.Length);
+                        Array.Copy(buffer, 0, bytes, readCounter, numberOfBytesRead);
                         readCounter += numberOfBytesRead;
-                        fs.Write(msg, 0, numberOfBytesRead);
                         Console.SetCursorPosition(0, Console.CursorTop);
-                        Console.Write($"{((UInt64)readCounter * 100) / ((UInt64)numberOfbytesToRead - 1)}% Completed");
+                        Console.Write($"{((UInt64)readCounter * 100) / ((UInt64)numberOfbytesToRead - 1)}% Completed" + " ; " + "Files total:" + filecounter);
                     }
-                    fs.Close();
+
+                    using(var stream = new MemoryStream(bytes))
+                    {
+                        var metadata = ImageMetadataReader.ReadMetadata(stream);
+
+                        var subdir = metadata.OfType<ExifSubIfdDirectory>().FirstOrDefault();
+
+                        
+
+                        if (subdir?.GetDescription(ExifDirectoryBase.TagDateTime) != null)
+                        {
+                            DateTime dt = DateTime.ParseExact(subdir?.GetDescription(ExifDirectoryBase.TagDateTime), "yyyy:MM:dd HH:mm:ss", CultureInfo.InvariantCulture);
+                            string output = dt.ToString("dd-MM-yyyy HH-mm-ss", CultureInfo.InvariantCulture);
+                            fileName = dirPath + output + "." + fileExtention;
+                            Console.WriteLine($"\n \n {fileName}");
+                        }
+                        else if (subdir?.GetDescription(ExifDirectoryBase.TagDateTimeDigitized) != null)
+                        {
+                            DateTime dt = DateTime.ParseExact(subdir?.GetDescription(ExifDirectoryBase.TagDateTimeDigitized), "yyyy:MM:dd HH:mm:ss", CultureInfo.InvariantCulture);
+                            string output = dt.ToString("dd-MM-yyyy HH-mm-ss", CultureInfo.InvariantCulture);
+                            fileName = dirPath + output + "." + fileExtention;
+                            Console.WriteLine($"\n \n {fileName}");
+                        }
+                        else if (subdir?.GetDescription(ExifDirectoryBase.TagDateTimeOriginal) != null)
+                        {
+                            DateTime dt = DateTime.ParseExact(subdir?.GetDescription(ExifDirectoryBase.TagDateTimeOriginal), "yyyy:MM:dd HH:mm:ss", CultureInfo.InvariantCulture);
+                            string output = dt.ToString("dd-MM-yyyy HH-mm-ss", CultureInfo.InvariantCulture);
+                            fileName = dirPath + output + "." + fileExtention;
+                            Console.WriteLine($"\n \n {fileName}");
+                        }
+                        else
+                        {
+                            fileName = dirPath + filecounter + "." + fileExtention;
+                            Console.WriteLine($"\n \n {fileName}");
+                            Console.WriteLine(subdir?.GetDescription(ExifDirectoryBase.TagDocumentName));
+                        }
+
+                        stream.Close();
+                    }
+                    using(FileStream fs = new FileStream(fileName, FileMode.Create, FileAccess.Write))
+                    {
+                        fs.Write(bytes, 0, bytes.Length);
+                        fs.Flush();
+                        fs.Close();
+                    }
                     Console.WriteLine('\n');
                 }
                 ns.Write(responseBytes, 0, responseBytes.Length);
                 ns.Close();
                 client.Close();
+                filecounter++;
             }
         }
     }
