@@ -9,6 +9,7 @@ using System.Runtime.InteropServices.ComTypes;
 using System.Text;
 using MetadataExtractor;
 using MetadataExtractor.Formats.Exif;
+using static System.Net.WebRequestMethods;
 
 namespace ShortcutsListener
 {
@@ -22,6 +23,7 @@ namespace ShortcutsListener
             TcpListener server = new TcpListener(IPAddress.Any, port);
             int filecounter = 1;
             string dirPath = "";
+            string finalFile = "";
 
             Console.WriteLine("Please type in a folder name that exists or one will be created");
             string folderInput = Console.ReadLine();
@@ -59,6 +61,7 @@ namespace ShortcutsListener
                     else //if file name is not specified generate something unique
                     {
                         fileName = $"file_{Guid.NewGuid()}";
+                        
                     }
 
                     //get the extention of the file its been always image/*, video/*, */*
@@ -75,6 +78,8 @@ namespace ShortcutsListener
                         default:
                             break;
                     }
+
+                    finalFile = dirPath + fileName + "." + fileExtention;
 
                     byte[] buffer = new byte[10000];
                     int readCounter = 0;
@@ -96,40 +101,39 @@ namespace ShortcutsListener
                         var metadata = ImageMetadataReader.ReadMetadata(stream);
 
                         var subdir = metadata.OfType<ExifSubIfdDirectory>().FirstOrDefault();
-
                         
 
                         if (subdir?.GetDescription(ExifDirectoryBase.TagDateTime) != null)
                         {
                             DateTime dt = DateTime.ParseExact(subdir?.GetDescription(ExifDirectoryBase.TagDateTime), "yyyy:MM:dd HH:mm:ss", CultureInfo.InvariantCulture);
                             string output = dt.ToString("dd-MM-yyyy HH-mm-ss", CultureInfo.InvariantCulture);
-                            fileName = dirPath + output + "." + fileExtention;
+                            finalFile = dirPath + output + "." + fileExtention;
                             Console.WriteLine($"\n \n {fileName}");
                         }
                         else if (subdir?.GetDescription(ExifDirectoryBase.TagDateTimeDigitized) != null)
                         {
                             DateTime dt = DateTime.ParseExact(subdir?.GetDescription(ExifDirectoryBase.TagDateTimeDigitized), "yyyy:MM:dd HH:mm:ss", CultureInfo.InvariantCulture);
                             string output = dt.ToString("dd-MM-yyyy HH-mm-ss", CultureInfo.InvariantCulture);
-                            fileName = dirPath + output + "." + fileExtention;
+                            finalFile = dirPath + output + "." + fileExtention;
                             Console.WriteLine($"\n \n {fileName}");
                         }
                         else if (subdir?.GetDescription(ExifDirectoryBase.TagDateTimeOriginal) != null)
                         {
                             DateTime dt = DateTime.ParseExact(subdir?.GetDescription(ExifDirectoryBase.TagDateTimeOriginal), "yyyy:MM:dd HH:mm:ss", CultureInfo.InvariantCulture);
                             string output = dt.ToString("dd-MM-yyyy HH-mm-ss", CultureInfo.InvariantCulture);
-                            fileName = dirPath + output + "." + fileExtention;
+                            finalFile = dirPath + output + "." + fileExtention;
                             Console.WriteLine($"\n \n {fileName}");
                         }
-                        else
-                        {
-                            fileName = dirPath + filecounter + "." + fileExtention;
-                            Console.WriteLine($"\n \n {fileName}");
-                            Console.WriteLine(subdir?.GetDescription(ExifDirectoryBase.TagDocumentName));
-                        }
+                        //else
+                        //{
+                        //    fileName = dirPath + filecounter + "." + fileExtention;
+                        //    Console.WriteLine($"\n \n {fileName}");
+                        //    Console.WriteLine(subdir?.GetDescription(ExifDirectoryBase.TagDocumentName));
+                        //}
 
                         stream.Close();
                     }
-                    using(FileStream fs = new FileStream(fileName, FileMode.Create, FileAccess.Write))
+                    using(FileStream fs = new FileStream(finalFile, FileMode.Create, FileAccess.Write))
                     {
                         fs.Write(bytes, 0, bytes.Length);
                         fs.Flush();
